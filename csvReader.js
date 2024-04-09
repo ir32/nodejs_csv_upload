@@ -1,6 +1,7 @@
 const pool = require('./db');
+const csvParser = require('csv-parser');
+const fs = require('fs');
 
-// Function to fetch data from the customers table
 async function getCustomers() {
   try {
     const connection = await pool.getConnection();
@@ -13,6 +14,39 @@ async function getCustomers() {
   }
 }
 
+function readCSV(filePath, callback) {
+  const results = [];
+
+  fs.createReadStream(filePath)
+    .pipe(csvParser())
+    .on('data', async (data) => {
+      results.push(data);
+    })
+    .on('end', async () => {
+      try {
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
+
+        for (const row of results) {
+          await connection.query('INSERT INTO customers SET ?', row);
+        }
+
+        await connection.commit();
+
+        connection.release();
+
+        callback({ message: 'Data inserted into customers table successfully' });
+      } catch (error) {
+        if (connection) {
+          await connection.rollback();
+          connection.release();
+        }
+        callback({ error: 'Error inserting data into customers table: ' + error.message });
+      }
+    });
+}
+
 module.exports = {
-  getCustomers
+  getCustomers,
+  readCSV
 };
